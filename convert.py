@@ -1,40 +1,104 @@
 import comtypes.client
 import os
+import sys
+import traceback
+from pathlib import Path
 
-def batch_convert_ppt_to_pdf():
-    # Get the current directory where the script is located
-    current_dir = os.getcwd()
-    
-    # Initialize the PowerPoint application once
+PDF_FORMAT = 32
+
+
+def log(msg):
+    print(msg)
+
+
+def get_ppt_files(folder):
+    folder = Path(folder)
+
+    files = []
+    for f in folder.iterdir():
+        if f.name.startswith("~$"):
+            continue
+
+        if f.suffix.lower() in [".ppt", ".pptx"]:
+            files.append(f)
+
+    return files
+
+
+def start_powerpoint():
     powerpoint = comtypes.client.CreateObject("PowerPoint.Application")
-    
-    # Iterate through all files in the current directory
-    for file in os.listdir(current_dir):
-        # Select only files with .ppt and .pptx extensions
-        if file.lower().endswith((".ppt", ".pptx")):
-            input_path = os.path.join(current_dir, file)
-            
-            # Set the output filename (replace extension with .pdf)
-            output_filename = os.path.splitext(file)[0] + ".pdf"
-            output_path = os.path.join(current_dir, output_filename)
-            
-            print(f"Converting: {file}...")
-            
-            try:
-                # Open the presentation (WithWindow=False runs it in the background)
-                presentation = powerpoint.Presentations.Open(input_path, WithWindow=False)
-                
-                # 32 is the constant for PDF format in PowerPoint
-                presentation.SaveAs(output_path, 32)
-                
-                presentation.Close()
-                print(f"Completed: {output_filename}")
-            except Exception as e:
-                print(f"Error occurred during conversion of ({file}): {e}")
+    powerpoint.Visible = 1
+    return powerpoint
 
-    # Close the PowerPoint application
-    powerpoint.Quit()
-    print("\nProcess finished! All presentations have been converted to PDF.")
+
+def convert_one(powerpoint, input_path, output_path):
+
+    try:
+        presentation = powerpoint.Presentations.Open(
+            str(input_path),
+            WithWindow=False
+        )
+
+        presentation.SaveAs(
+            str(output_path),
+            PDF_FORMAT
+        )
+
+        presentation.Close()
+
+        log(f"[OK] {input_path.name}")
+
+    except Exception as e:
+        log(f"[ERROR] {input_path.name}")
+        traceback.print_exc()
+
+
+def batch_convert(folder):
+
+    folder = Path(folder).resolve()
+
+    files = get_ppt_files(folder)
+
+    if not files:
+        log("No PPT files found")
+        return
+
+    log(f"Found {len(files)} files")
+
+    powerpoint = None
+
+    try:
+        powerpoint = start_powerpoint()
+
+        for file in files:
+
+            pdf_path = file.with_suffix(".pdf")
+
+            if pdf_path.exists():
+                log(f"[SKIP] {pdf_path.name}")
+                continue
+
+            convert_one(
+                powerpoint,
+                file,
+                pdf_path
+            )
+
+    finally:
+        if powerpoint:
+            powerpoint.Quit()
+            log("PowerPoint closed")
+
+
+def main():
+
+    if len(sys.argv) > 1:
+        folder = sys.argv[1]
+    else:
+        folder = os.getcwd()
+
+    batch_convert(folder)
+
 
 if __name__ == "__main__":
-    batch_convert_ppt_to_pdf()
+    main()
